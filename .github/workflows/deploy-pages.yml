@@ -36,18 +36,20 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v5
         with:
-          node-version: "22.16.0"
+          node-version: "22.22.0"
+          registry-url: "https://registry.npmjs.org"
 
       - name: Install stable npm
         run: npm install --global npm@10.8.0 --no-audit --no-fund
 
-      - name: Show versions
-        run: |
-          node --version
-          npm --version
+      - name: Remove unusable lock file
+        run: rm -f package-lock.json
 
-      - name: Install dependencies
-        run: npm install --no-audit --no-fund
+      - name: Install all dependencies from public npm
+        run: npm install --include=dev --package-lock=false --no-audit --no-fund --registry=https://registry.npmjs.org/
+
+      - name: Verify build tools
+        run: npm ls vite @vitejs/plugin-react vite-plugin-pwa
 
       - name: Build North Budget
         run: npm run build
