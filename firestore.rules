@@ -1,0 +1,29 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isApprovedUser() {
+      return request.auth != null
+        && request.auth.token.email_verified == true
+        && request.auth.token.email in [
+          "APPROVED_EMAIL_1",
+          "APPROVED_EMAIL_2"
+        ];
+    }
+
+    function isNorthBudgetHousehold(householdId) {
+      return householdId == "HOUSEHOLD_ID";
+    }
+
+    match /households/{householdId} {
+      allow read, write: if isApprovedUser() && isNorthBudgetHousehold(householdId);
+
+      match /{document=**} {
+        allow read, write: if isApprovedUser() && isNorthBudgetHousehold(householdId);
+      }
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
