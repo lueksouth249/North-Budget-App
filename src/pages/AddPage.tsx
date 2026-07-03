@@ -5,11 +5,15 @@ import {
   Sparkles
 } from "lucide-react";
 import {
+  useEffect,
   useMemo,
   useState,
   type FormEvent
 } from "react";
-import { useNavigate } from "react-router-dom";
+import {
+  useNavigate,
+  useSearchParams
+} from "react-router-dom";
 import { SplitEditor } from "../components/SplitEditor";
 import { StatusMessage } from "../components/StatusMessage";
 import {
@@ -47,6 +51,9 @@ export function AddPage() {
 
   const { setImport } = useImportSession();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const requestedBucketId =
+    searchParams.get("bucket");
 
   const [date, setDate] = useState(
     todayIso()
@@ -65,6 +72,11 @@ export function AddPage() {
   const [
     bucketId,
     setBucketId
+  ] = useState<string | null>(null);
+
+  const [
+    appliedBucketParam,
+    setAppliedBucketParam
   ] = useState<string | null>(null);
 
   const [
@@ -119,6 +131,45 @@ export function AddPage() {
       return 0;
     }
   }, [amount]);
+
+  useEffect(() => {
+    if (!requestedBucketId) {
+      return;
+    }
+
+    if (
+      requestedBucketId ===
+      appliedBucketParam
+    ) {
+      return;
+    }
+
+    if (
+      !buckets.some(
+        (bucket) =>
+          bucket.id === requestedBucketId
+      )
+    ) {
+      return;
+    }
+
+    setSplit(false);
+    setBucketId(requestedBucketId);
+    setAllocations([
+      {
+        bucketId: requestedBucketId,
+        amountCents
+      }
+    ]);
+    setAppliedBucketParam(
+      requestedBucketId
+    );
+  }, [
+    requestedBucketId,
+    buckets,
+    amountCents,
+    appliedBucketParam
+  ]);
 
   const merchant = useMemo(
     () =>

@@ -1,4 +1,4 @@
-import { Chart as ChartJS, CategoryScale, LinearScale, BarElement, PointElement, LineElement, Tooltip, Legend } from "chart.js";
+import { Chart as ChartJS, CategoryScale, LinearScale, BarElement, PointElement, LineElement, Tooltip, Legend, type ChartOptions } from "chart.js";
 import { Bar, Line } from "react-chartjs-2";
 import { useEffect, useMemo, useState } from "react";
 import { MonthSwitcher } from "../components/MonthSwitcher";
@@ -40,6 +40,32 @@ export function ReportsPage() {
     const snapshot = budgetSnapshot(report.buckets, report.transactions);
     return snapshot.budgetCents ? Math.round(snapshot.percentUsed * 100) : 0;
   });
+  const chartOptions: ChartOptions<"bar"> = {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: {
+      legend: {
+        display: false
+      }
+    }
+  };
+  const lineOptions: ChartOptions<"line"> = {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: {
+      legend: {
+        display: false
+      }
+    },
+    scales: {
+      y: {
+        beginAtZero: true,
+        ticks: {
+          callback: (value: string | number) => `${value}%`
+        }
+      }
+    }
+  };
 
   return (
     <div className="page reports-page">
@@ -53,8 +79,8 @@ export function ReportsPage() {
             <div><span>{(currentSnapshot?.remainingCents ?? 0) >= 0 ? "Remaining" : "Over"}</span><strong className={(currentSnapshot?.remainingCents ?? 0) < 0 ? "negative" : ""}>{formatCurrency(Math.abs(currentSnapshot?.remainingCents ?? 0))}</strong></div>
             <div><span>Unassigned</span><strong>{formatCurrency(currentSnapshot?.unassignedCents ?? 0)}</strong></div>
           </section>
-          <section className="chart-card"><h2>Budget vs. spending · 6 months</h2><Bar data={{ labels, datasets: [{ label: "Budget", data: budgetData }, { label: "Spent", data: spentData }] }} options={{ responsive: true, maintainAspectRatio: false, plugins: { legend: { position: "bottom" } } }} /></section>
-          <section className="chart-card"><h2>Budget used · 6 months</h2><Line data={{ labels, datasets: [{ label: "% used", data: percentageData }] }} options={{ responsive: true, maintainAspectRatio: false, plugins: { legend: { position: "bottom" } }, scales: { y: { beginAtZero: true, ticks: { callback: (value) => `${value}%` } } } }} /></section>
+          <section className="chart-card"><h2>Budget vs. spending · 6 months</h2><div className="chart-plot"><Bar data={{ labels, datasets: [{ label: "Budget", data: budgetData, backgroundColor: "#0b5fb3", borderColor: "#0b5fb3" }, { label: "Spent", data: spentData, backgroundColor: "#16855b", borderColor: "#16855b" }] }} options={chartOptions} /></div><div className="chart-legend"><span><i style={{ background: "#0b5fb3" }} />Budget</span><span><i style={{ background: "#16855b" }} />Spent</span></div></section>
+          <section className="chart-card"><h2>Budget used · 6 months</h2><div className="chart-plot"><Line data={{ labels, datasets: [{ label: "% used", data: percentageData, borderColor: "#074a8c", backgroundColor: "rgba(11, 95, 179, .16)", pointBackgroundColor: "#074a8c", pointBorderColor: "#074a8c", tension: 0.25 }] }} options={lineOptions} /></div><div className="chart-legend"><span><i style={{ background: "#074a8c" }} />% used</span></div></section>
           <section className="history-list"><h2>Month-by-month</h2>{[...reports].reverse().map((report) => {
             const snapshot = budgetSnapshot(report.buckets, report.transactions);
             const noBudget = snapshot.budgetCents === 0;

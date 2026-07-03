@@ -1,5 +1,6 @@
 import {
   AlertCircle,
+  PlusCircle,
   Pencil,
   ReceiptText
 } from "lucide-react";
@@ -7,12 +8,20 @@ import {
   Link,
   useNavigate
 } from "react-router-dom";
+import {
+  useState
+} from "react";
 import { MonthSwitcher } from "../components/MonthSwitcher";
 import { ProgressBar } from "../components/ProgressBar";
 import { StatusMessage } from "../components/StatusMessage";
 import { useAppData } from "../context/AppDataContext";
 import { budgetSnapshot } from "../lib/budget";
 import { formatCurrency } from "../lib/currency";
+
+const SECTION_ORDER = [
+  "Spending",
+  "Bills & Subscriptions"
+];
 
 export function BudgetPage() {
   const {
@@ -28,6 +37,16 @@ export function BudgetPage() {
 
   const navigate = useNavigate();
 
+  const [
+    selectedBucketId,
+    setSelectedBucketId
+  ] = useState<string | null>(null);
+
+  const selectedBucket = buckets.find(
+    (bucket) =>
+      bucket.id === selectedBucketId
+  );
+
   const snapshot = budgetSnapshot(
     buckets,
     transactions
@@ -39,7 +58,11 @@ export function BudgetPage() {
         (bucket) => bucket.section
       )
     )
-  ];
+  ].sort(
+    (a, b) =>
+      sectionRank(a) - sectionRank(b) ||
+      a.localeCompare(b)
+  );
 
   return (
     <div className="page budget-page">
@@ -234,8 +257,8 @@ export function BudgetPage() {
                         key={bucket.id}
                         className="bucket-row"
                         onClick={() =>
-                          navigate(
-                            `/transactions?bucket=${bucket.id}`
+                          setSelectedBucketId(
+                            bucket.id
                           )
                         }
                       >
@@ -298,8 +321,89 @@ export function BudgetPage() {
               </span>
             </div>
           )}
+
+          {selectedBucket && (
+            <div
+              className="action-sheet-backdrop"
+              role="presentation"
+              onClick={() =>
+                setSelectedBucketId(null)
+              }
+            >
+              <div
+                className="action-sheet"
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="bucket-action-title"
+                onClick={(event) =>
+                  event.stopPropagation()
+                }
+              >
+                <div className="action-sheet-heading">
+                  <span>
+                    {selectedBucket.emoji}
+                  </span>
+
+                  <strong id="bucket-action-title">
+                    {selectedBucket.name}
+                  </strong>
+                </div>
+
+                <button
+                  type="button"
+                  className="action-sheet-option"
+                  onClick={() =>
+                    navigate(
+                      `/transactions?bucket=${encodeURIComponent(
+                        selectedBucket.id
+                      )}`
+                    )
+                  }
+                >
+                  <ReceiptText />
+
+                  Transactions
+                </button>
+
+                <button
+                  type="button"
+                  className="action-sheet-option"
+                  onClick={() =>
+                    navigate(
+                      `/add?bucket=${encodeURIComponent(
+                        selectedBucket.id
+                      )}`
+                    )
+                  }
+                >
+                  <PlusCircle />
+
+                  Add
+                </button>
+
+                <button
+                  type="button"
+                  className="text-button wide"
+                  onClick={() =>
+                    setSelectedBucketId(null)
+                  }
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
         </>
       )}
     </div>
   );
+}
+
+function sectionRank(section: string) {
+  const index =
+    SECTION_ORDER.indexOf(section);
+
+  return index === -1
+    ? SECTION_ORDER.length
+    : index;
 }

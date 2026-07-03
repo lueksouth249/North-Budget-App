@@ -5,14 +5,17 @@ import { createFingerprint } from "../../lib/fingerprint";
 import { normalizeMerchant } from "../../lib/merchant";
 
 const DATE_PATTERN = /\b(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)\s+(\d{1,2})\s+(20\d{2})\b/i;
+const MONTH_DAY_PATTERN = /\b(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)\s+(\d{1,2})\b/i;
+const YEAR_PATTERN = /\b(20\d{2})\b/;
 const DEBIT_PATTERN = /\(\s*\$\s*([\d,]+\.\d{2})\s*\)/;
 const MONEY_PATTERN = /\$\s*([\d,]+\.\d{2})/;
 const MONTHS: Record<string, number> = { JAN: 1, FEB: 2, MAR: 3, APR: 4, MAY: 5, JUN: 6, JUL: 7, AUG: 8, SEP: 9, OCT: 10, NOV: 11, DEC: 12 };
 
-interface OcrLine { text: string; bbox: { x0: number; y0: number; x1: number; y1: number }; confidence: number; }
+export interface OcrLine { text: string; bbox: { x0: number; y0: number; x1: number; y1: number }; confidence: number; }
+interface DateMarker { line: OcrLine; month: string; day: string; year: string; confidence: number; }
 
-function toIso(match: RegExpMatchArray): string {
-  return `${match[3]}-${String(MONTHS[match[1].toUpperCase()]).padStart(2, "0")}-${String(Number(match[2])).padStart(2, "0")}`;
+function toIso(marker: DateMarker): string {
+  return `${marker.year}-${String(MONTHS[marker.month.toUpperCase()]).padStart(2, "0")}-${String(Number(marker.day)).padStart(2, "0")}`;
 }
 
 export function parseScreenshotAmount(text: string): { kind: "debit" | "credit" | "none"; cents?: number } {
@@ -21,6 +24,60 @@ export function parseScreenshotAmount(text: string): { kind: "debit" | "credit" 
   const credit = text.match(MONEY_PATTERN);
   if (credit) return { kind: "credit", cents: Math.abs(dollarsToCents(credit[1])) };
   return { kind: "none" };
+}
+
+export function findDateMarkers(lines: OcrLine[], width: number, height: number): DateMarker[] {
+  const markers: DateMarker[] = [];
+
+  for (const line of lines) {
+    const match = line.text.match(DATE_PATTERN);
+    if (!match) continue;
+    markers.push({
+      line,
+      month: match[1],
+      day: match[2],
+      year: match[3],
+      confidence: line.confidence
+    });
+  }
+
+  const fullDateLines = new Set(markers.map((marker) => marker.line));
+  const yearLines = lines
+    .map((line) => ({ line, match: line.text.match(YEAR_PATTERN) }))
+    .filter((item): item is { line: OcrLine; match: RegExpMatchArray } => Boolean(item.match));
+
+  for (const line of lines) {
+    if (fullDateLines.has(line)) continue;
+
+    const monthDay = line.text.match(MONTH_DAY_PATTERN);
+    if (!monthDay || YEAR_PATTERN.test(line.text)) continue;
+
+    const rowHeight = Math.max(32, line.bbox.y1 - line.bbox.y0);
+    const maxVerticalGap = Math.max(rowHeight * 3.2, height * 0.055);
+    const maxHorizontalGap = width * 0.08;
+    const yearLine = yearLines
+      .filter((item) => item.line !== line)
+      .filter((item) => Math.abs(item.line.bbox.x0 - line.bbox.x0) <= maxHorizontalGap)
+      .filter((item) => item.line.bbox.y0 >= line.bbox.y0 && item.line.bbox.y0 - line.bbox.y0 <= maxVerticalGap)
+      .sort((a, b) => a.line.bbox.y0 - b.line.bbox.y0)[0];
+
+    if (!yearLine) continue;
+
+    markers.push({
+      line,
+      month: monthDay[1],
+      day: monthDay[2],
+      year: yearLine.match[1],
+      confidence: Math.min(line.confidence, yearLine.line.confidence)
+    });
+  }
+
+  return markers
+    .sort((a, b) => a.line.bbox.y0 - b.line.bbox.y0)
+    .filter((marker, index, sorted) => {
+      const previous = sorted[index - 1];
+      return !previous || Math.abs(previous.line.bbox.y0 - marker.line.bbox.y0) > height * 0.015 || toIso(previous) !== toIso(marker);
+    });
 }
 
 async function preprocess(file: File): Promise<{ canvas: HTMLCanvasElement; width: number; height: number }> {
@@ -78,17 +135,14 @@ export async function parseUccuScreenshots(
       const rawLines = (blockLines.length ? blockLines : tsvLines)
         .map((line) => ({ ...line, text: line.text.replace(/\s+/g, " ").trim() }))
         .filter((line) => line.text);
-      const dateLines = rawLines
-        .map((line) => ({ line, match: line.text.match(DATE_PATTERN) }))
-        .filter((item): item is { line: OcrLine; match: RegExpMatchArray } => Boolean(item.match))
-        .sort((a, b) => a.line.bbox.y0 - b.line.bbox.y0);
+      const dateMarkers = findDateMarkers(rawLines, prepared.width, prepared.height);
 
-      for (let i = 0; i < dateLines.length; i += 1) {
-        const current = dateLines[i];
-        const nextY = dateLines[i + 1]?.line.bbox.y0 ?? prepared.height;
+      for (let i = 0; i < dateMarkers.length; i += 1) {
+        const current = dateMarkers[i];
+        const nextY = dateMarkers[i + 1]?.line.bbox.y0 ?? prepared.height;
         const rowTop = current.line.bbox.y0;
         const rowBottom = nextY;
-        if (rowTop < prepared.height * 0.015 || rowBottom > prepared.height * 0.995) {
+        if (rowTop < prepared.height * 0.015) {
           summary.incompleteSkipped += 1;
           continue;
         }
@@ -105,16 +159,17 @@ export async function parseUccuScreenshots(
           .sort((a, b) => a.bbox.y0 - b.bbox.y0);
         const balanceMatch = balanceCandidates[0]?.text.match(MONEY_PATTERN);
         const descriptionLines = rowLines
-          .filter((line) => line.bbox.x0 < prepared.width * 0.78)
+          .filter((line) => line.bbox.x0 > prepared.width * 0.12 && line.bbox.x0 < prepared.width * 0.78)
           .filter((line) => !DATE_PATTERN.test(line.text) && !MONEY_PATTERN.test(line.text))
-          .filter((line) => !/Transactions|Details\s*&\s*Settings/i.test(line.text))
+          .filter((line) => !MONTH_DAY_PATTERN.test(line.text) && !YEAR_PATTERN.test(line.text))
+          .filter((line) => !/Transactions|Details\s*&\s*Settings|HOME|MOBILE\s+DEPOSIT|TRANSFERS|LOAN\s+PAYMENT|MENU|Pending/i.test(line.text))
           .sort((a, b) => a.bbox.y0 - b.bbox.y0);
         const rawDescription = descriptionLines.map((line) => line.text).join(" ").replace(/^[©@O0 ]+/, "").trim();
         if (!rawDescription || !balanceMatch || current.line.confidence < 35 || debitLine.confidence < 35) {
           summary.incompleteSkipped += 1;
           continue;
         }
-        const postDate = toIso(current.match);
+        const postDate = toIso(current);
         const runningBalanceCents = dollarsToCents(balanceMatch[1]);
         const merchant = normalizeMerchant(rawDescription);
         const sourceFingerprint = await createFingerprint({ postDate, rawDescription, amountCents: amount.cents, runningBalanceCents });

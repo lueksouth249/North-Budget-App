@@ -1,11 +1,9 @@
 import {
   AlertTriangle,
   CheckCircle2,
-  ChevronDown,
   Sparkles
 } from "lucide-react";
 import {
-  useMemo,
   useState
 } from "react";
 import { useNavigate } from "react-router-dom";
@@ -49,13 +47,6 @@ export function ImportReviewPage() {
     error,
     setError
   ] = useState<string | null>(null);
-
-  const [
-    selected,
-    setSelected
-  ] = useState<Set<string>>(
-    new Set()
-  );
 
   const [
     openSplit,
@@ -103,21 +94,6 @@ export function ImportReviewPage() {
         )
     );
 
-  const highConfidence =
-    useMemo(
-      () =>
-        reviewable.filter(
-          (item) =>
-            item.suggestion
-              ?.bucketId &&
-            (
-              item.suggestion
-                .confidence ?? 0
-            ) >= 0.8
-        ),
-      [reviewable]
-    );
-
   const update = (
     tempId: string,
     patch:
@@ -159,43 +135,6 @@ export function ImportReviewPage() {
     update(item.tempId, {
       allocations
     });
-  };
-
-  const applyToSelected = (
-    bucketId: string | null
-  ) => {
-    updateTransactions(
-      transactions.map(
-        (item) =>
-          selected.has(item.tempId)
-            ? {
-                ...item,
-                allocations: [
-                  {
-                    bucketId,
-                    amountCents:
-                      item.amountCents
-                  }
-                ],
-                excluded: false
-              }
-            : item
-      )
-    );
-  };
-
-  const excludeSelected = () => {
-    updateTransactions(
-      transactions.map(
-        (item) =>
-          selected.has(item.tempId)
-            ? {
-                ...item,
-                excluded: true
-              }
-            : item
-      )
-    );
   };
 
   const applyHighConfidence =
@@ -400,94 +339,9 @@ export function ImportReviewPage() {
         >
           <Sparkles />
 
-          Accept{" "}
-          {highConfidence.length}{" "}
-          high-confidence matches
-        </button>
-
-        <button
-          type="button"
-          className="text-button"
-          onClick={() =>
-            setSelected(
-              new Set(
-                reviewable.map(
-                  (item) =>
-                    item.tempId
-                )
-              )
-            )
-          }
-        >
-          Select all
-        </button>
-
-        <button
-          type="button"
-          className="text-button"
-          onClick={() =>
-            setSelected(new Set())
-          }
-        >
-          Clear
+          Auto-fill suggestions
         </button>
       </div>
-
-      {selected.size > 0 && (
-        <div className="batch-bar">
-          <span>
-            {selected.size} selected
-          </span>
-
-          <select
-            value=""
-            aria-label="Apply action to selected transactions"
-            onChange={(event) => {
-              const action =
-                event.target.value;
-
-              if (
-                action === "exclude"
-              ) {
-                excludeSelected();
-              } else if (
-                action ===
-                "unassigned"
-              ) {
-                applyToSelected(null);
-              } else if (action) {
-                applyToSelected(
-                  action
-                );
-              }
-            }}
-          >
-            <option value="">
-              Apply action…
-            </option>
-
-            <option value="unassigned">
-              Set Unassigned
-            </option>
-
-            {buckets.map(
-              (bucket) => (
-                <option
-                  value={bucket.id}
-                  key={bucket.id}
-                >
-                  {bucket.emoji}{" "}
-                  {bucket.name}
-                </option>
-              )
-            )}
-
-            <option value="exclude">
-              Exclude
-            </option>
-          </select>
-        </div>
-      )}
 
       <div className="review-list">
         {reviewable.map(
@@ -517,41 +371,6 @@ export function ImportReviewPage() {
                 key={item.tempId}
               >
                 <div className="review-card-head">
-                  <input
-                    type="checkbox"
-                    checked={selected.has(
-                      item.tempId
-                    )}
-                    onChange={(
-                      event
-                    ) => {
-                      setSelected(
-                        (current) => {
-                          const next =
-                            new Set(
-                              current
-                            );
-
-                          if (
-                            event.target
-                              .checked
-                          ) {
-                            next.add(
-                              item.tempId
-                            );
-                          } else {
-                            next.delete(
-                              item.tempId
-                            );
-                          }
-
-                          return next;
-                        }
-                      );
-                    }}
-                    aria-label={`Select ${item.displayMerchant}`}
-                  />
-
                   <div>
                     <strong>
                       {
@@ -581,15 +400,30 @@ export function ImportReviewPage() {
                   <div className="inline-warning">
                     <AlertTriangle />
 
-                    Possible duplicate—review before saving.
+                    Possible duplicate. Review before saving.
                   </div>
                 )}
 
-                <details>
-                  <summary>
-                    Raw description
-                    <ChevronDown />
-                  </summary>
+                <details className="review-details">
+                  <summary>Details</summary>
+
+                  <label>
+                    Budget date
+
+                    <input
+                      type="date"
+                      value={item.postDate}
+                      onChange={(event) =>
+                        update(
+                          item.tempId,
+                          {
+                            postDate:
+                              event.target.value
+                          }
+                        )
+                      }
+                    />
+                  </label>
 
                   <p className="raw-description">
                     {
@@ -616,22 +450,16 @@ export function ImportReviewPage() {
                       </strong>
 
                       <small>
-                        {
-                          item.suggestion
-                            .reason
-                        }
-                        {" · "}
                         {Math.round(
                           item.suggestion
                             .confidence *
                             100
                         )}
-                        %
+                        % match
                       </small>
                     </span>
                   </div>
                 )}
-
                 {openSplit ===
                 item.tempId ? (
                   <SplitEditor

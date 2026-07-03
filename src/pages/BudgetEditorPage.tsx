@@ -6,12 +6,17 @@ import { dollarsToCents, centsToInput, formatCurrency } from "../lib/currency";
 import { monthlyBudgetTotal } from "../lib/budget";
 import type { Bucket } from "../types/models";
 
+const SECTION_ORDER = [
+  "Spending",
+  "Bills & Subscriptions"
+];
+
 export function BudgetEditorPage() {
   const { buckets, transactions, saveBuckets, saveAsTemplate, saveOneTransaction } = useAppData();
   const [draft, setDraft] = useState<Bucket[]>(structuredClone(buckets));
   const [saving, setSaving] = useState(false);
   const navigate = useNavigate();
-  const sections = [...new Set([...draft.map((bucket) => bucket.section), "Bills & Subscriptions", "Spending"])];
+  const sections = [...new Set([...draft.map((bucket) => bucket.section), "Spending", "Bills & Subscriptions"])].sort((a, b) => sectionRank(a) - sectionRank(b) || a.localeCompare(b));
 
   const update = (id: string, patch: Partial<Bucket>) => setDraft((items) => items.map((item) => item.id === id ? { ...item, ...patch } : item));
   const move = (bucket: Bucket, delta: number) => {
@@ -65,4 +70,9 @@ export function BudgetEditorPage() {
       </div>
     </div>
   );
+}
+
+function sectionRank(section: string) {
+  const index = SECTION_ORDER.indexOf(section);
+  return index === -1 ? SECTION_ORDER.length : index;
 }
